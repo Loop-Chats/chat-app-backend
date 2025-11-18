@@ -1,5 +1,5 @@
 FROM node
-WORKDIR /backend
+WORKDIR /chat-app-backend
 COPY package*.json ./
 RUN npm install
 COPY . .
