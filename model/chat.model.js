@@ -2,7 +2,8 @@ import mongoose from "mongoose";
 
 const chatSchema = new mongoose.Schema(
     {
-        chatName: { type: String, trim: true, required: true },
+        chatName: { type: String, trim: true },
+        chatImage: { type: String, },
         isGroupChat: { type: Boolean, default: false },
         users: [
             {
