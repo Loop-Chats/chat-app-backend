@@ -9,6 +9,7 @@ var usersRouter = require('./routes/user.route');
 var authRoute = require('./routes/auth.route');
 var messageRoute = require('./routes/message.route');
 var chatRoute = require('./routes/chat.route');
+var profileRoute = require('./routes/profile.route');
 
 var app = express();
 
@@ -27,6 +28,7 @@ app.use('/api/users', usersRouter);
 app.use('/api/auth', authRoute);
 app.use('/api/messages', messageRoute);
 app.use('/api/chats', chatRoute);
+app.use('/api/profile', profileRoute);
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {

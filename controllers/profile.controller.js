@@ -1,7 +1,10 @@
+import User from "../model/user.model.js";
+
 export const updateProfile = async (req, res) => {
     try {
         const { username, avatar } = req.body;
         const userId = req.user._id;
+        var updatedUser = null;
 
         if (!username && !avatar) {
             return res.status(400).json({ message: "At least one field is required to update" });
@@ -11,7 +14,7 @@ export const updateProfile = async (req, res) => {
             const uploadResponse = await cloudinary.uploader.upload(avatar);
             updatedUser = await User.findByIdAndUpdate(
                 userId,
-                { avatar: uploadResponse.secure_url },
+                { $set: {avatar: uploadResponse.secure_url }},
                 { new: true }
             );
         }
@@ -19,7 +22,7 @@ export const updateProfile = async (req, res) => {
         if (username) {
             updatedUser = await User.findByIdAndUpdate(
                 userId,
-                { username: username },
+                { $set: {username: username } },
                 { new: true }
             );
         }

@@ -22,7 +22,7 @@ function getMongoUrl() {
   return `mongodb://${host}:${port}`;
 }
 
-function connect(options = {}) {
+async function connect(options = {}) {
   const mongoUrl = getMongoUrl();
 
   const opts = Object.assign({
@@ -31,15 +31,24 @@ function connect(options = {}) {
     // poolSize, socketTimeoutMS, etc. if needed
   }, options);
 
-  return mongoose.connect(mongoUrl, opts)
-    .then((conn) => {
+  const maxAttempts = parseInt(process.env.MONGO_CONNECT_RETRIES || '20', 10);
+  const delayMs = parseInt(process.env.MONGO_CONNECT_DELAY_MS || '1000', 10);
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const conn = await mongoose.connect(mongoUrl, opts);
       console.log('MongoDB connected:', mongoUrl);
       return conn;
-    })
-    .catch((err) => {
-      console.error('MongoDB connection error:', err);
-      throw err;
-    });
+    } catch (err) {
+      console.error(`MongoDB connection attempt ${attempt} failed:`, err.message || err);
+      if (attempt === maxAttempts) {
+        console.error('Exceeded max MongoDB connection attempts.');
+        throw err;
+      }
+      // wait before retrying
+      await new Promise((res) => setTimeout(res, delayMs));
+    }
+  }
 }
 
 module.exports = { connect, mongoose };
