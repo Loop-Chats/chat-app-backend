@@ -4,6 +4,13 @@
  * Module dependencies.
  */
 
+// Load environment variables from .env when running locally
+try {
+  require('dotenv').config();
+} catch (e) {
+  // ignore if dotenv is not available
+}
+
 var app = require('../app');
 var debug = require('debug')('backend:server');
 var http = require('http');
