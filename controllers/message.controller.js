@@ -1,11 +1,12 @@
 import Chat from "../model/chat.model.js";
 import Message from "../model/message.model.js";
+import cloudinary from "../lib/cloudinary.js";
 
 export const getChatMessages = async (req, res) => {
     try {
         const { chatId } = req.params;
 
-        const chatMessages = await Message.find({ chat: chatId }).sort({ createdAt: -1 });
+        const chatMessages = await Message.find({ chat: chatId }).sort({ createdAt: 1 });
 
         res.status(200).json(chatMessages);
     } catch (error) {
