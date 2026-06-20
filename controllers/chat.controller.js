@@ -91,7 +91,7 @@ export const createUserChat = async (req, res) => {
     let chatDataToReturn = populatedChat;
     if (!isGroupChat) {
       const otherUser = populatedChat.users.find(
-        (user) => user._id.toString() !== userId.toString()
+        (user) => user._id.toString() !== userId.toString(),
       );
       chatDataToReturn = {
         ...populatedChat,
@@ -142,11 +142,11 @@ export const deleteUserChat = async (req, res) => {
   }
 };
 
-export const renameGroupChat = async (req, res) => {
+export const updateGroupDetails = async (req, res) => {
   try {
     const userId = req.user._id;
     const { chatId } = req.params;
-    const { newChatName } = req.body;
+    const { chatName, chatImage } = req.body;
 
     const chat = await Chat.findById(chatId);
 
@@ -160,22 +160,27 @@ export const renameGroupChat = async (req, res) => {
         .json({ message: "Cannot rename a non-group chat" });
     }
 
-    if (!newChatName || newChatName.trim() === "") {
-      return res.status(400).json({ message: "New chat name is required" });
-    }
-
     if (userId.toString() !== chat.groupAdmin.toString()) {
       return res
         .status(403)
         .json({ message: "Only group admin can rename the chat" });
     }
 
-    chat.chatName = newChatName;
-    await chat.save();
+    if (chatName && chatName.trim() !== "") {
+      chat.chatName = chatName;
+    }
 
-    res.status(200).json({ message: "Chat renamed successfully", chat });
+    if (chatImage && chatImage.startsWith("data:image")) {
+      const uploadResponse = await cloudinary.uploader.upload(chatImage);
+      chat.chatImage = uploadResponse.secure_url;
+    }
+
+    const updatedChat = await chat.save();
+    await updatedChat.populate("users", "username avatar");
+
+    res.status(200).json(updatedChat);
   } catch (error) {
-    console.log("Error in renameGroupChat controller", error.message);
+    console.log("Error in updateGroupDetails controller", error.message);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -209,9 +214,11 @@ export const addUserToGroupChat = async (req, res) => {
     }
 
     chat.users.push(newUserId);
-    await chat.save();
 
-    res.status(200).json({ message: "User added to chat successfully", chat });
+    const updatedChat = await chat.save();
+    await updatedChat.populate("users", "username avatar");
+
+    res.status(200).json(updatedChat);
   } catch (error) {
     console.log("Error in addUserToGroupChat controller", error.message);
     res.status(500).json({ message: "Internal Server Error" });
@@ -255,11 +262,10 @@ export const removeUserFromGroupChat = async (req, res) => {
     chat.users = chat.users.filter(
       (id) => id.toString() !== removeUserId.toString(),
     );
-    await chat.save();
+    const updatedChat = await chat.save();
+    await updatedChat.populate("users", "username avatar");
 
-    res
-      .status(200)
-      .json({ message: "User removed from chat successfully", chat });
+    res.status(200).json(updatedChat);
   } catch (error) {
     console.log("Error in removeUserFromGroupChat controller", error.message);
     res.status(500).json({ message: "Internal Server Error" });
@@ -291,6 +297,51 @@ export const leaveGroupChat = async (req, res) => {
     await chat.save();
   } catch (error) {
     console.log("Error in leaveGroupChat controller", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+export const makeChatAdmin = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { chatId } = req.params;
+    const { selectedUserId } = req.body;
+
+    const chat = await Chat.findById(chatId);
+
+    if (!chat) {
+      return res.status(404).json({ message: "Chat not found" });
+    }
+
+    if (!chat.isGroupChat) {
+      return res
+        .status(400)
+        .json({ message: "Cannot make admin in a non-group chat" });
+    }
+
+    if (userId.toString() !== chat.groupAdmin.toString()) {
+      return res
+        .status(403)
+        .json({ message: "Only the group admin can transfer admin rights" });
+    }
+
+    if (!chat.users.includes(selectedUserId)) {
+      return res.status(400).json({ message: "User is not in the chat" });
+    }
+
+    if (selectedUserId.toString() === chat.groupAdmin.toString()) {
+      return res.status(400).json({ message: "User is already admin" });
+    }
+
+    chat.groupAdmin = selectedUserId;
+
+    const updatedChat = await chat.save();
+
+    await updatedChat.populate("users", "username avatar");
+
+    res.status(200).json(updatedChat);
+  } catch (error) {
+    console.log("Error in makeChatAdmin controller:", error.message);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
