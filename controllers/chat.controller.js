@@ -10,6 +10,7 @@ export const getUserChats = async (req, res) => {
       users: userId,
     })
       .populate("users", "username avatar")
+      .populate("latestMessage")
       .sort({ updatedAt: -1 })
       .lean();
 

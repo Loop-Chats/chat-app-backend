@@ -12,8 +12,8 @@ try {
 }
 
 var app = require('../app');
+var { server } = require('../lib/socket');
 var debug = require('debug')('backend:server');
-var http = require('http');
 const db = require('../db');
 
 /**
@@ -22,12 +22,6 @@ const db = require('../db');
 
 var port = normalizePort(process.env.PORT || '3000');
 app.set('port', port);
-
-/**
- * Create HTTP server.
- */
-
-var server = http.createServer(app);
 
 // Connect to MongoDB and only start the server after a successful DB connection
 db.connect()

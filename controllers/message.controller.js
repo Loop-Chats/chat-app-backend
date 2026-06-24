@@ -1,6 +1,7 @@
 import Chat from "../model/chat.model.js";
 import Message from "../model/message.model.js";
 import cloudinary from "../lib/cloudinary.js";
+import { getReceiverSocketId, io } from "../lib/socket.js";
 
 export const getChatMessages = async (req, res) => {
     try {
@@ -26,6 +27,9 @@ export const createChatMessage = async (req, res) => {
             return res.status(400).json({ message: "Chat ID is required" });
         }
 
+        const chat = await Chat.findById(chatId);
+        if (!chat) return res.status(404).json({ message: "Chat not found" });
+
         if (image) {
             const uploadResponse = await cloudinary.uploader.upload(image);
             imageUrl = uploadResponse.secure_url;
@@ -42,6 +46,17 @@ export const createChatMessage = async (req, res) => {
         await newMessage.save();
 
         await Chat.findByIdAndUpdate(chatId, { latestMessage: newMessage._id });
+
+        io.to(chatId).emit('newMessage', newMessage);
+
+        chat.users.forEach(userIdInChat => {
+            if (userIdInChat.toString() !== senderId.toString()) {
+                io.to(userIdInChat.toString()).emit("chatUpdated", {
+                  chatId,
+                  latestMessage: newMessage,
+                });
+            }
+        });
 
         res.status(201).json(newMessage);
 

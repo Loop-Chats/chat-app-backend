@@ -5,6 +5,7 @@ var cookieParser = require('cookie-parser');
 var logger = require('morgan');
 var cors = require('cors');
 
+var { app } = require('./lib/socket');
 var indexRouter = require('./routes/index');
 var usersRouter = require('./routes/user.route');
 var authRoute = require('./routes/auth.route');
@@ -12,7 +13,7 @@ var messageRoute = require('./routes/message.route');
 var chatRoute = require('./routes/chat.route');
 var profileRoute = require('./routes/profile.route');
 
-var app = express();
+
 
 // view engine setup
 app.set('views', path.join(__dirname, 'views'));
