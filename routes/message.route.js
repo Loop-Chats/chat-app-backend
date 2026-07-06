@@ -5,8 +5,8 @@ var router = express.Router();
 
 router.get('/chats/:chatId', protectRoute, getChatMessages);
 router.post('/chats/:chatId', protectRoute, createChatMessage);
-router.patch('', protectRoute, editMessage);
-router.delete('', protectRoute, deleteMessage);
+router.patch('/:messageId/update', protectRoute, editMessage);
+router.patch('/:messageId/delete', protectRoute, deleteMessage);
 router.patch('/mark-message/:messageId', protectRoute, markMessageAsRead);
 
 module.exports = router;

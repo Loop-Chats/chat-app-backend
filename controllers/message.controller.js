@@ -69,7 +69,8 @@ export const createChatMessage = async (req, res) => {
 export const editMessage = async (req, res) => {
     try {
         const userId = req.user._id;
-        const { messageId, newText } = req.body;
+        const { messageId } = req.params;
+        const { newText } = req.body;
 
         const message = await Message.findById(messageId);
 
@@ -102,7 +103,7 @@ export const editMessage = async (req, res) => {
 export const deleteMessage = async (req, res) => {
     try {
         const userId = req.user._id;
-        const { messageId } = req.body;
+        const { messageId } = req.params;
 
         const message = await Message.findById(messageId);
 
@@ -114,8 +115,29 @@ export const deleteMessage = async (req, res) => {
             return res.status(403).json({ message: "You can only delete your own messages" });
         }
 
-        await Message.findByIdAndDelete(messageId);
-        res.status(200).json({ message: "Message deleted successfully" });
+        if (message.image) {
+            const publicId = message.image.split("/").pop().split(".")[0];
+            await cloudinary.uploader.destroy(publicId);
+        }
+
+        message.text = "This message was deleted.";
+        message.image = "";
+        message.isDeleted = true;
+
+        await message.save();
+
+        const chat = await Chat.findById(message.chat);
+
+        if (chat) {
+            chat.users.forEach(userIdInChat => {
+                const operatorSocketId = getReceiverSocketId(userIdInChat.toString());
+                if (operatorSocketId) {
+                    io.to(operatorSocketId).emit("messageDeleted", message);
+                }
+            });
+        }
+
+        res.status(200).json(message);
     } catch (error) {
         console.log("Error in deleteMessage controller", error.message);
         res.status(500).json({ message: "Internal Server Error" });
