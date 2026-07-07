@@ -1,6 +1,8 @@
-import { generateToken } from "../lib/utils.js";
+import { generateToken, generateVerificationToken } from "../lib/utils.js";
+import { sendVerificationEmail } from "../services/email/email.service.js";
 import User from "../model/user.model.js";
 import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 
 export const register = async (req, res) => {
     const { username, email, password } = req.body;
@@ -24,17 +26,22 @@ export const register = async (req, res) => {
             username,
             email,
             password: hashedPassword,
+            isVerified: false
         });
 
         if (newUser) {
-            generateToken(newUser._id, res);
             await newUser.save();
+
+            generateToken(newUser._id, res);
+
+            sendWelcomeEmail(newUser.email, newUser.username);
 
             res.status(201).json({
                 _id: newUser._id,
                 username: newUser.username,
                 email: newUser.email,
                 avatar: newUser.avatar,
+                isVerified: newUser.isVerified
             });
         } else {
             res.status(400).json({ message: "Invalid user data" });
@@ -43,7 +50,6 @@ export const register = async (req, res) => {
         console.log("Error in register controller", error.message);
         res.status(500).json({ message: "Internal Server Error" });
     }
-    
 };
 
 export const login = async (req, res) => {
@@ -101,3 +107,63 @@ export const checkAuth = async (req, res) => {
         res.status(500).json({ message: "Internal Server Error" });
     }
 }
+
+export const verifyEmail = async (req, res) => {
+    try {
+        const { token } = req.body;
+
+        if (!token) {
+            return res.status(400).json({ message: "Verification token is required" });
+        }
+
+        let decoded;
+        try {
+            decoded = jwt.verify(token, process.env.JWT_SECRET);
+        } catch (err) {
+            return res.status(400).json({ message: "Invalid or expired verification link" });
+        }
+
+        if (decoded.purpose !== 'email_verification') {
+            return res.status(403).json({ message: "Unauthorized token use case" });
+        }
+
+        const user = await User.findById(decoded.userId);
+
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        if (user.isVerified) {
+            return res.status(400).json({ message: "Your account is already verified." });
+        }
+
+        user.isVerified = true;
+        await user.save();
+
+        res.status(200).json({ message: "Email verified successfully! Connection established." });
+
+    } catch (error) {
+        console.log("Error in verifyEmail controller", error.message);
+        res.status(500).json({ message: "Internal Server Error" });
+    }
+};
+
+export const resendVerificationEmail = async (req, res) => {
+    try {
+        const user = req.user;
+
+        if (user.isVerified) {
+            return res.status(400).json({ message: "Your account is already verified." });
+        }
+
+        const emailToken = generateVerificationToken(user._id);
+
+        sendVerificationEmail(user.email, user.username, emailToken);
+
+        res.status(200).json({ message: "A new verification link has been sent to your email." });
+
+    } catch (error) {
+        console.log("Error in resendVerificationEmail controller", error.message);
+        res.status(500).json({ message: "Internal Server Error" });
+    }
+};

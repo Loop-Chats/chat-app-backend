@@ -1,5 +1,5 @@
 var express = require('express');
-const { register, login, logout, checkAuth } = require('../controllers/auth.controller.js');
+const { register, login, logout, checkAuth, resendVerificationEmail, verifyEmail } = require('../controllers/auth.controller.js');
 const { updateProfile } = require('../controllers/profile.controller.js');
 const { protectRoute } = require('../middleware/profile.middleware.js');
 var router = express.Router();
@@ -11,5 +11,7 @@ router.post('/logout', logout);
 router.patch('/update-profile', protectRoute, updateProfile);
 
 router.get('/check-auth', protectRoute, checkAuth);
+router.post('/resend-verification-email', protectRoute, resendVerificationEmail);
+router.post("/verify-email", verifyEmail);
 
 module.exports = router;
