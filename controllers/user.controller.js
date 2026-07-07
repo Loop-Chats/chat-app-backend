@@ -1,5 +1,6 @@
 import FriendRequest from "../model/friendRequest.model.js";
 import User from "../model/user.model.js";
+import { getReceiverSocketId, io } from "../lib/socket.js";
 
 export const getFriendsForSidebar = async (req, res) => {
   try {
@@ -18,6 +19,12 @@ export const sendFriendRequest = async (req, res) => {
   try {
     const { username } = req.body;
     const senderId = req.user._id;
+
+    const sender = await User.findById(senderId);
+
+    if (!sender) {
+      return res.status(404).json({ message: "Sender not found" });
+    }
 
     if (!username) {
       return res.status(400).json({ message: "Username is required" });
@@ -39,7 +46,7 @@ export const sendFriendRequest = async (req, res) => {
         .json({ message: "You cannot send a friend request to yourself." });
     }
 
-    if (receiver.friends.includes(senderId)) {
+    if (sender.friends.includes(receiverId)) {
       return res
         .status(400)
         .json({ message: "You are already friends with this user." });
@@ -54,12 +61,10 @@ export const sendFriendRequest = async (req, res) => {
     });
 
     if (existingRequest) {
-      return res
-        .status(400)
-        .json({
-          message:
-            "A pending friend request already exists between you and this user.",
-        });
+      return res.status(400).json({
+        message:
+          "A pending friend request already exists between you and this user.",
+      });
     }
 
     const friendRequest = new FriendRequest({
@@ -70,9 +75,16 @@ export const sendFriendRequest = async (req, res) => {
 
     await friendRequest.save();
 
-    res
-      .status(201)
-      .json({ message: "Friend request sent successfully!", friendRequest });
+    const populatedRequest = await FriendRequest.findById(friendRequest._id)
+      .populate("sender", "username avatar email");
+
+    const receiverSocketId = getReceiverSocketId(receiverId);
+
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("newFriendRequest", populatedRequest);
+    }
+
+    res.status(201).json({ friendRequest: populatedRequest });
   } catch (error) {
     console.log("Error in sendFriendRequest controller:", error.message);
     res.status(500).json({ message: "Internal Server Error" });
@@ -85,18 +97,17 @@ export const respondToFriendRequest = async (req, res) => {
     const { friendRequestId } = req.params;
     const { action } = req.body;
 
-    const friendRequest = await FriendRequest.findById(friendRequestId);
+    const friendRequest = await FriendRequest.findById(friendRequestId)
+      .populate("sender", "username avatar email");
 
     if (!friendRequest) {
       return res.status(404).json({ message: "Friend request not found" });
     }
 
-    if (friendRequest.sender.toString() === userId.toString()) {
-      return res
-        .status(403)
-        .json({
-          message: "You are not authorized to respond to this friend request",
-        });
+    if (friendRequest.receiver.toString() !== userId.toString()) {
+      return res.status(403).json({
+        message: "You are not authorized to respond to this friend request",
+      });
     }
 
     if (friendRequest.status !== "pending") {
@@ -113,6 +124,13 @@ export const respondToFriendRequest = async (req, res) => {
       await User.findByIdAndUpdate(friendRequest.receiver, {
         $push: { friends: friendRequest.sender },
       });
+
+      const senderSocketId = getReceiverSocketId(friendRequest.sender._id.toString());
+      if (senderSocketId) {
+        const currentUser = await User.findById(userId).select("username avatar email");
+
+        io.to(senderSocketId).emit("friendRequestAccepted", currentUser);
+      }
     } else if (action === "reject") {
       friendRequest.status = "rejected";
     }
@@ -139,6 +157,11 @@ export const removeFriend = async (req, res) => {
 
     await User.findByIdAndUpdate(userId, { $pull: { friends: friendId } });
     await User.findByIdAndUpdate(friendId, { $pull: { friends: userId } });
+
+    const friendSocketId = getReceiverSocketId(friendId);
+    if (friendSocketId) {
+      io.to(friendSocketId).emit("friendRemoved", userId);
+    }
 
     res.status(200).json({ message: "Friend removed successfully" });
   } catch (error) {

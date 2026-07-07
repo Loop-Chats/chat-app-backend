@@ -93,6 +93,17 @@ export const editMessage = async (req, res) => {
         message.text = newText;
         await message.save();
 
+        const chat = await Chat.findById(message.chat);
+
+        if (chat) {
+            chat.users.forEach(userIdInChat => {
+                const operatorSocketId = getReceiverSocketId(userIdInChat.toString());
+                if (operatorSocketId) {
+                    io.to(operatorSocketId).emit("messageEdited", message);
+                }
+            });
+        }
+
         res.status(200).json(message);
     } catch (error) {
         console.log("Error in editChatMessage controller", error.message);
