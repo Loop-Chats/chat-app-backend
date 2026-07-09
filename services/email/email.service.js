@@ -1,5 +1,5 @@
 import sgMail from '../../lib/sendgrid.js';
-import { getVerificationEmailTemplate } from './email.templates.js';
+import { getVerificationEmailTemplate, getWelcomeEmailTemplate } from './email.templates.js';
 
 export const sendVerificationEmail = async (email, username, token) => {
   const confirmUrl = `${process.env.CLIENT_URL}/verify-email?token=${token}`;

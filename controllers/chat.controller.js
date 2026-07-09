@@ -1,6 +1,8 @@
 import Chat from "../model/chat.model.js";
 import User from "../model/user.model.js";
+import Message from "../model/message.model.js";
 import cloudinary from "../lib/cloudinary.js";
+import { getReceiverSocketId, io } from "../lib/socket.js";
 
 export const getUserChats = async (req, res) => {
   try {
@@ -210,16 +212,57 @@ export const addUserToGroupChat = async (req, res) => {
         .json({ message: "Only group admin can add users to the chat" });
     }
 
-    if (chat.users.includes(newUserId)) {
+    if (chat.users.some((id) => id.toString() === newUserId.toString())) {
       return res.status(400).json({ message: "User is already in the chat" });
     }
+
+    const [addedUser, addedByUser] = await Promise.all([
+      User.findById(newUserId).select("username avatar"),
+      User.findById(userId).select("username"),
+    ]);
 
     chat.users.push(newUserId);
 
     const updatedChat = await chat.save();
     await updatedChat.populate("users", "username avatar");
 
-    res.status(200).json(updatedChat);
+    const addMessage = new Message({
+      senderId: userId,
+      text: `${addedUser?.username || "A user"} was added by ${addedByUser?.username || "an admin"}`,
+      chat: chatId,
+      isSystem: true,
+      readBy: [],
+    });
+
+    await addMessage.save();
+    await Chat.findByIdAndUpdate(chatId, { latestMessage: addMessage._id });
+
+    const messagePayload = addMessage.toJSON();
+    const updatedChatPayload = updatedChat.toJSON();
+    updatedChatPayload.latestMessage = messagePayload;
+
+    const socketPayload = {
+      chatId: String(chatId),
+      addedUserId: String(newUserId),
+      updatedChat: updatedChatPayload,
+      addMessage: messagePayload,
+    };
+
+    updatedChat.users.forEach((member) => {
+      const memberId = member._id.toString();
+      const socketId = getReceiverSocketId(memberId);
+
+      if (socketId) {
+        io.to(socketId).emit("addedToGroupChat", socketPayload);
+        io.to(socketId).emit("newMessage", messagePayload);
+        io.to(socketId).emit("chatUpdated", {
+          chatId: String(chatId),
+          latestMessage: messagePayload,
+        });
+      }
+    });
+
+    res.status(200).json(updatedChatPayload);
   } catch (error) {
     console.log("Error in addUserToGroupChat controller", error.message);
     res.status(500).json({ message: "Internal Server Error" });
@@ -250,7 +293,7 @@ export const removeUserFromGroupChat = async (req, res) => {
         .json({ message: "Only group admin can remove users from the chat" });
     }
 
-    if (!chat.users.includes(removeUserId)) {
+    if (!chat.users.some((id) => id.toString() === removeUserId.toString())) {
       return res.status(400).json({ message: "User is not in the chat" });
     }
 
@@ -260,13 +303,65 @@ export const removeUserFromGroupChat = async (req, res) => {
         .json({ message: "Group admin cannot be removed from the chat" });
     }
 
+    const [removedUser, removedByUser] = await Promise.all([
+      User.findById(removeUserId).select("username"),
+      User.findById(userId).select("username"),
+    ]);
+
     chat.users = chat.users.filter(
       (id) => id.toString() !== removeUserId.toString(),
     );
     const updatedChat = await chat.save();
     await updatedChat.populate("users", "username avatar");
 
-    res.status(200).json(updatedChat);
+    const removeMessage = new Message({
+      senderId: userId,
+      text: `${removedUser?.username || "A user"} was removed by ${removedByUser?.username || "an admin"}`,
+      chat: chatId,
+      isSystem: true,
+      readBy: [],
+    });
+
+    await removeMessage.save();
+    await Chat.findByIdAndUpdate(chatId, { latestMessage: removeMessage._id });
+
+    const messagePayload = removeMessage.toJSON();
+    const updatedChatPayload = updatedChat.toJSON();
+    updatedChatPayload.latestMessage = messagePayload;
+
+    const remainingPayload = {
+      chatId: String(chatId),
+      removedUserId: String(removeUserId),
+      updatedChat: updatedChatPayload,
+      removeMessage: messagePayload,
+    };
+
+    updatedChat.users.forEach((member) => {
+      const memberId = member._id.toString();
+      const socketId = getReceiverSocketId(memberId);
+
+      if (socketId) {
+        io.to(socketId).emit("removedFromGroupChat", remainingPayload);
+        io.to(socketId).emit("newMessage", messagePayload);
+        io.to(socketId).emit("chatUpdated", {
+          chatId: String(chatId),
+          latestMessage: messagePayload,
+        });
+      }
+    });
+
+    const removedSocketId = getReceiverSocketId(String(removeUserId));
+
+    if (removedSocketId) {
+      io.to(removedSocketId).emit("removedFromGroupChat", {
+        chatId: String(chatId),
+        removedUserId: String(removeUserId),
+        removeMessage: messagePayload,
+        wasRemoved: true,
+      });
+    }
+
+    res.status(200).json(updatedChatPayload);
   } catch (error) {
     console.log("Error in removeUserFromGroupChat controller", error.message);
     res.status(500).json({ message: "Internal Server Error" });
@@ -288,14 +383,55 @@ export const leaveGroupChat = async (req, res) => {
       return res.status(400).json({ message: "Cannot leave a non-group chat" });
     }
 
-    if (!chat.users.includes(userId)) {
+    if (!chat.users.some((id) => id.toString() === userId.toString())) {
       return res
         .status(400)
         .json({ message: "You are not a member of this chat" });
     }
 
-    chat.users = chat.users.filter((id) => id.toString() !== userId.toString());
+    const leavingUser = await User.findById(userId).select("username");
+    const remainingUserIds = chat.users
+      .filter((id) => id.toString() !== userId.toString())
+      .map((id) => id.toString());
+
+    chat.users = chat.users.filter(
+      (id) => id.toString() !== userId.toString(),
+    );
     await chat.save();
+
+    const leaveMessage = new Message({
+      senderId: userId,
+      text: `${leavingUser?.username || "A member"} left the group`,
+      chat: chatId,
+      isSystem: true,
+      readBy: [],
+    });
+
+    await leaveMessage.save();
+    await Chat.findByIdAndUpdate(chatId, { latestMessage: leaveMessage._id });
+
+    const messagePayload = leaveMessage.toJSON();
+    const socketPayload = {
+      chatId: String(chatId),
+      userId: String(userId),
+      username: leavingUser?.username,
+      leaveMessage: messagePayload,
+    };
+
+    remainingUserIds.forEach((memberId) => {
+      const socketId = getReceiverSocketId(memberId);
+
+      if (socketId) {
+        io.to(socketId).emit("leftGroupChat", socketPayload);
+        io.to(socketId).emit("newMessage", messagePayload);
+        io.to(socketId).emit("chatUpdated", {
+          chatId: String(chatId),
+          latestMessage: messagePayload,
+        });
+      }
+    });
+
+    res.status(200).json({ message: "You have left the group successfully" });
   } catch (error) {
     console.log("Error in leaveGroupChat controller", error.message);
     res.status(500).json({ message: "Internal Server Error" });

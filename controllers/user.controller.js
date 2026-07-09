@@ -158,10 +158,7 @@ export const removeFriend = async (req, res) => {
     await User.findByIdAndUpdate(userId, { $pull: { friends: friendId } });
     await User.findByIdAndUpdate(friendId, { $pull: { friends: userId } });
 
-    const friendSocketId = getReceiverSocketId(friendId);
-    if (friendSocketId) {
-      io.to(friendSocketId).emit("friendRemoved", userId);
-    }
+    io.to(friendId.toString()).emit("friendRemoved", userId);
 
     res.status(200).json({ message: "Friend removed successfully" });
   } catch (error) {
