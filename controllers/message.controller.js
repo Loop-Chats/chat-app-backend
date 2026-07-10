@@ -6,10 +6,28 @@ import { getReceiverSocketId, io } from "../lib/socket.js";
 export const getChatMessages = async (req, res) => {
     try {
         const { chatId } = req.params;
+        const { cursor, limit } = req.query;
 
-        const chatMessages = await Message.find({ chat: chatId }).sort({ createdAt: 1 });
+        const requestedLimit = parseInt(limit) || 50;
 
-        res.status(200).json(chatMessages);
+        const LIMIT = Math.min(requestedLimit, 100);
+
+        let query = { chat: chatId };
+        if (cursor) {
+            query._id = { $lt: cursor };
+        }
+
+        const messages = await Message.find(query)
+            .sort({ _id: -1 })
+            .limit(LIMIT);
+
+        const chronologicalMessages = messages.reverse();
+        const hasMore = messages.length === LIMIT;
+
+        res.status(200).json({
+            messages: chronologicalMessages,
+            hasMore,
+        });
     } catch (error) {
         console.log("Error in getChatMessages controller", error.message);
         res.status(500).json({ message: "Internal Server Error" });
